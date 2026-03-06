@@ -120,7 +120,9 @@ end)
 
 -- Enable break indent
 vim.o.breakindent = true
-
+vim.opt.tabstop = 4
+vim.opt.shiftwidth = 4
+vim.opt.expandtab = true
 -- Save undo history
 vim.o.undofile = true
 
@@ -170,12 +172,36 @@ vim.o.confirm = true
 -- vim.keymap.set('n', '<leader>cd', vim.cmd.Ex, { desc = 'Go to File Explorer' })
 -- vim.keymap.set('v', 'J', ":m '>+1<CR>gv=gv", { desc = 'Move selection down' })
 -- vim.keymap.set('v', 'K', ":m '<-2<CR>gv=gv", { desc = 'Move selection up' })
-vim.keymap.set('n', '<leader>r', function()
-  vim.cmd '!cd %:p:h && gcc %:t -o %:t:r && ./%:t:r'
-end, { desc = 'Compile & run C file' })
+-- vim.keymap.set('n', '<leader>r', function()
+-- vim.cmd '!cd %:p:h && gcc %:t -o %:t:r && ./%:t:r'
+-- end, { desc = 'Compile & run C file' })
+--rust
+vim.keymap.set('n', '<leader>z', ':split | terminal cargo run<CR>', {
+  desc = 'Cargo run (split terminal)',
+})
+
+--custom keybinds
+vim.keymap.set('n', '<leader>n', function()
+  local ft = vim.bo.filetype
+  local file = vim.fn.expand '%'
+  local file_no_ext = vim.fn.expand '%:r'
+
+  if ft == 'python' then
+    vim.cmd('split | terminal python3 ' .. file)
+  elseif ft == 'c' then
+    vim.cmd('split | terminal gcc ' .. file .. ' -o ' .. file_no_ext .. ' && ./' .. file_no_ext)
+  elseif ft == 'rust' then
+    vim.cmd('split | terminal rustc ' .. file .. ' && ./' .. file_no_ext)
+  elseif ft == 'javascript' then
+    vim.cmd('split | terminal node ' .. file)
+  else
+    print('No run command for ' .. ft)
+  end
+end)
 
 -- open file_browser with the path of the current buffer
 vim.keymap.set('n', '<leader>e', ':Telescope file_browser path=%:p:h select_buffer=true<CR>')
+vim.keymap.set('n', '<leader>p', ':e #<CR>', { desc = 'Go to previous file' })
 -- END OF CUSTOM KEYBINDS I CREATED
 
 -- [[ Basic Keymaps ]]
@@ -418,6 +444,72 @@ require('lazy').setup({
     opts = { -- set to setup table
     },
   },
+  {
+    'ThePrimeagen/harpoon',
+    branch = 'harpoon2',
+    dependencies = {
+      'nvim-lua/plenary.nvim',
+      'nvim-telescope/telescope.nvim',
+    },
+    config = function()
+      local harpoon = require 'harpoon'
+      harpoon:setup {}
+
+      vim.keymap.set('n', '<leader>a', function()
+        harpoon:list():add()
+      end)
+      vim.keymap.set('n', '<leader>r', function()
+        harpoon.ui:toggle_quick_menu(harpoon:list())
+      end)
+
+      vim.keymap.set('n', '<C-h>', function()
+        harpoon:list():select(1)
+      end)
+      vim.keymap.set('n', '<C-t>', function()
+        harpoon:list():select(2)
+      end)
+      vim.keymap.set('n', '<C-n>', function()
+        harpoon:list():select(3)
+      end)
+      vim.keymap.set('n', '<C-s>', function()
+        harpoon:list():select(4)
+      end)
+
+      -- Toggle previous & next buffers stored within Harpoon list
+      vim.keymap.set('n', '<C-S-P>', function()
+        harpoon:list():prev()
+      end)
+      vim.keymap.set('n', '<C-S-N>', function()
+        harpoon:list():next()
+      end)
+
+      -- Telescope integration
+      local conf = require('telescope.config').values
+
+      local function toggle_telescope(harpoon_files)
+        local file_paths = {}
+        for _, item in ipairs(harpoon_files.items) do
+          table.insert(file_paths, item.value)
+        end
+
+        require('telescope.pickers')
+          .new({}, {
+            prompt_title = 'Harpoon',
+            finder = require('telescope.finders').new_table {
+              results = file_paths,
+            },
+            previewer = conf.file_previewer {},
+            sorter = conf.generic_sorter {},
+          })
+          :find()
+      end
+
+      vim.keymap.set('n', '<leader>m', function()
+        toggle_telescope(harpoon:list())
+      end, { desc = 'Harpoon (Telescope)' })
+    end,
+  },
+
   -- The dependencies are proper plugin specifications as well - anything
   -- you do for a plugin at the top level, you can do for a dependency.
   -- Use the `dependencies` key to specify the dependencies of a particular plugin.
@@ -899,7 +991,7 @@ require('lazy').setup({
         -- <c-k>: Toggle signature help
         --
         -- See :h blink-cmp-config-keymap for defining your own keymap
-        preset = 'default',
+        preset = 'enter',
 
         -- For more advanced Luasnip keymaps (e.g. selecting choice nodes, expansion) see:
         --    https://github.com/L3MON4D3/LuaSnip?tab=readme-ov-file#keymaps
