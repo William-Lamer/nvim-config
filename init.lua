@@ -285,7 +285,14 @@ rtp:prepend(lazypath)
 -- NOTE: Here is where you install your plugins.
 require('lazy').setup({
   -- NOTE: Plugins can be added with a link (or for a github repo: 'owner/repo' link).
-  'NMAC427/guess-indent.nvim', -- Detect tabstop and shiftwidth automatically
+  {
+    'NMAC427/guess-indent.nvim', -- Detect tabstop and shiftwidth automatically
+    opts = {
+      filetype_exclude = {
+        'c',
+      },
+    },
+  },
   -- Added by me, dashboard plugin
   {
     'folke/snacks.nvim',
@@ -462,7 +469,7 @@ require('lazy').setup({
         harpoon.ui:toggle_quick_menu(harpoon:list())
       end)
 
-      vim.keymap.set('n', '<C-h>', function()
+      vim.keymap.set('n', '<C-g>', function()
         harpoon:list():select(1)
       end)
       vim.keymap.set('n', '<C-t>', function()
