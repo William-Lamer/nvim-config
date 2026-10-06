@@ -220,12 +220,62 @@ local function open_popup(title)
   return buf
 end
 
--- ctx is { title, prompt, focus = { buf, first, last } }. focus is highlighted while the popup is open.
+-- The popup's content lives in a state table rather than in its buffer, so the window can be
+-- closed and reopened (M.reopen_last) while the answer keeps streaming in.
+-- state is { mode, title, root, text, done, session_id, buf }
+local function render(state)
+  if state.buf and vim.api.nvim_buf_is_valid(state.buf) then
+    vim.api.nvim_buf_set_lines(state.buf, 0, -1, false, vim.split(state.text == '' and '_Thinking..._' or state.text, '\n'))
+  end
+end
+
+local function show_popup(state, on_close)
+  local buf = open_popup(state.mode.model .. ': ' .. state.title)
+  state.buf = buf
+  render(state)
+  if on_close then
+    vim.api.nvim_create_autocmd('BufWipeout', { buffer = buf, once = true, callback = on_close })
+  end
+
+  local function close()
+    vim.api.nvim_buf_delete(buf, { force = true })
+  end
+  vim.keymap.set('n', 'q', close, { buffer = buf })
+  vim.keymap.set('n', '<Esc>', close, { buffer = buf })
+  vim.keymap.set('n', 'c', function()
+    if not state.done or not state.session_id then
+      vim.notify('Wait for the answer to finish first', vim.log.levels.INFO)
+      return
+    end
+    close()
+    -- The chat gets the full Claude Code setup even when the popup was lite
+    start_chat(state.mode, state.root, { '--resume', state.session_id })
+  end, { buffer = buf })
+end
+
+local last_popup = nil
+
+function M.reopen_last()
+  if not last_popup then
+    vim.notify('No Claude popup to bring back yet', vim.log.levels.INFO)
+    return
+  end
+  local win = last_popup.buf and vim.fn.bufwinid(last_popup.buf) or -1
+  if win ~= -1 then
+    vim.api.nvim_set_current_win(win)
+  else
+    show_popup(last_popup)
+  end
+end
+
+-- ctx is { title, prompt, focus = { buf, first, last } }. focus is highlighted while the first popup is open.
 local function run_popup(mode, ctx)
   if not has_claude() then
     return
   end
-  local root = project_root(vim.api.nvim_get_current_buf())
+  local state = { mode = mode, title = ctx.title, root = project_root(vim.api.nvim_get_current_buf()), text = '', done = false }
+  last_popup = state
+
   if ctx.focus then
     vim.api.nvim_buf_set_extmark(ctx.focus.buf, ns, ctx.focus.first - 1, 0, {
       end_row = ctx.focus.last - 1,
@@ -234,38 +284,34 @@ local function run_popup(mode, ctx)
       hl_eol = true,
     })
   end
-
-  local buf = open_popup(mode.model .. ': ' .. ctx.title)
-  local text, pending, session_id, done = '', '', nil, false
-
-  local function render()
-    if vim.api.nvim_buf_is_valid(buf) then
-      vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(text == '' and '_Thinking..._' or text, '\n'))
+  show_popup(state, function()
+    if ctx.focus and vim.api.nvim_buf_is_valid(ctx.focus.buf) then
+      vim.api.nvim_buf_clear_namespace(ctx.focus.buf, ns, 0, -1)
     end
-  end
-  render()
+  end)
 
   -- See `claude -p --output-format stream-json` for the event shapes
   local function handle_event(ev)
     if ev.type == 'system' and ev.session_id then
-      session_id = ev.session_id
+      state.session_id = ev.session_id
     elseif ev.type == 'result' and ev.is_error then
-      text = text .. '\n\n**Error:** ' .. tostring(ev.result)
-    elseif ev.type == 'result' and text == '' and type(ev.result) == 'string' then
-      text = ev.result
+      state.text = state.text .. '\n\n**Error:** ' .. tostring(ev.result)
+    elseif ev.type == 'result' and state.text == '' and type(ev.result) == 'string' then
+      state.text = ev.result
     elseif ev.type == 'stream_event' then
       local e = ev.event
-      if e.type == 'message_start' and text ~= '' then
-        text = text .. '\n\n'
+      if e.type == 'message_start' and state.text ~= '' then
+        state.text = state.text .. '\n\n'
       elseif e.type == 'content_block_start' and e.content_block.type == 'tool_use' then
-        text = text .. '`[' .. e.content_block.name .. ']` '
+        state.text = state.text .. '`[' .. e.content_block.name .. ']` '
       elseif e.type == 'content_block_delta' and e.delta.type == 'text_delta' then
-        text = text .. e.delta.text
+        state.text = state.text .. e.delta.text
       end
     end
   end
 
   -- stdout arrives in arbitrary chunks, so buffer until each full JSON line is in
+  local pending = ''
   local function feed(data)
     pending = pending .. data
     for line in pending:gmatch '([^\n]*)\n' do
@@ -275,11 +321,11 @@ local function run_popup(mode, ctx)
       end
     end
     pending = pending:match '[^\n]*$'
-    render()
+    render(state)
   end
 
-  local job = vim.system(popup_command(mode), {
-    cwd = root,
+  vim.system(popup_command(mode), {
+    cwd = state.root,
     stdin = ctx.prompt,
     text = true,
     stdout = function(_, data)
@@ -291,41 +337,13 @@ local function run_popup(mode, ctx)
     end,
   }, function(res)
     vim.schedule(function()
-      done = true
-      if res.code ~= 0 and text == '' then
-        text = '**claude exited with status ' .. res.code .. '**\n\n' .. (res.stderr or '')
-        render()
+      state.done = true
+      if res.code ~= 0 and state.text == '' then
+        state.text = '**claude exited with status ' .. res.code .. '**\n\n' .. (res.stderr or '')
+        render(state)
       end
     end)
   end)
-
-  vim.api.nvim_create_autocmd('BufWipeout', {
-    buffer = buf,
-    once = true,
-    callback = function()
-      if not done then
-        job:kill 'sigterm'
-      end
-      if ctx.focus and vim.api.nvim_buf_is_valid(ctx.focus.buf) then
-        vim.api.nvim_buf_clear_namespace(ctx.focus.buf, ns, 0, -1)
-      end
-    end,
-  })
-
-  local function close()
-    vim.api.nvim_buf_delete(buf, { force = true })
-  end
-  vim.keymap.set('n', 'q', close, { buffer = buf })
-  vim.keymap.set('n', '<Esc>', close, { buffer = buf })
-  vim.keymap.set('n', 'c', function()
-    if not done or not session_id then
-      vim.notify('Wait for the answer to finish first', vim.log.levels.INFO)
-      return
-    end
-    close()
-    -- The chat gets the full Claude Code setup even when the popup was lite
-    start_chat(mode, root, { '--resume', session_id })
-  end, { buffer = buf })
 end
 
 -- Picks which error to explain, most specific first. Returns a popup ctx or nil.

@@ -237,6 +237,7 @@ for _, variant in ipairs {
     claude.toggle_chat(mode)
   end, { desc = 'Claude: [C]hat' .. variant.label })
 end
+vim.keymap.set('n', '<leader>cb', claude.reopen_last, { desc = 'Claude: [B]ring back last popup' })
 -- END OF CUSTOM KEYBINDS I CREATED
 
 -- [[ Basic Keymaps ]]
