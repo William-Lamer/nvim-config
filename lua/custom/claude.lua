@@ -467,10 +467,13 @@ end
 -- Node type names differ per language (function_definition in C and Python, function_item in Rust,
 -- method_definition in JS), so match on the name instead of listing them.
 local function enclosing_function()
-  local ok, node = pcall(vim.treesitter.get_node)
-  if not ok then
+  local ok, parser = pcall(vim.treesitter.get_parser)
+  if not ok or not parser then
     return nil
   end
+  -- The tree may not be parsed yet, for example right after opening a file
+  parser:parse()
+  local node = vim.treesitter.get_node()
   while node do
     local t = node:type()
     if (t:match 'function' or t:match 'method') and not (t:match 'call' or t:match 'declarator' or t:match 'parameter') then
