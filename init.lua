@@ -189,7 +189,9 @@ vim.keymap.set('n', '<leader>n', function()
   if ft == 'python' then
     vim.cmd('split | terminal python3 ' .. file)
   elseif ft == 'c' then
-    vim.cmd('split | terminal gcc ' .. file .. ' -o ' .. file_no_ext .. ' && ./' .. file_no_ext)
+    -- Sanitizers turn crashes into reports with file:line. UBSan only fails the run with no-recover.
+    local flags = ' -Wall -g -fsanitize=address,undefined -fno-sanitize-recover=undefined'
+    vim.cmd('split | terminal gcc ' .. file .. flags .. ' -o ' .. file_no_ext .. ' && ./' .. file_no_ext)
   elseif ft == 'rust' then
     vim.cmd('split | terminal rustc ' .. file .. ' && ./' .. file_no_ext)
   elseif ft == 'javascript' then
@@ -202,6 +204,39 @@ end)
 -- open file_browser with the path of the current buffer
 vim.keymap.set('n', '<leader>e', ':Telescope file_browser path=%:p:h select_buffer=true<CR>')
 vim.keymap.set('n', '<leader>p', ':e #<CR>', { desc = 'Go to previous file' })
+
+-- Claude: explain errors and code in a popup, or chat in a vertical split. See lua/custom/claude.lua
+-- Lowercase keys use the quick mode, uppercase keys the deep one.
+local claude = require 'custom.claude'
+local quick = { model = 'sonnet', effort = 'medium', lite = true }
+local deep = { model = 'opus', effort = 'high' }
+for _, variant in ipairs {
+  { mode = quick, upper = false, label = '' },
+  { mode = deep, upper = true, label = ' (Opus)' },
+} do
+  local function key(k)
+    return '<leader>c' .. (variant.upper and k:upper() or k)
+  end
+  local mode = variant.mode
+  vim.keymap.set({ 'n', 'x' }, key 'e', function()
+    claude.explain_error(mode)
+  end, { desc = 'Claude: [E]xplain error' .. variant.label })
+  vim.keymap.set('n', key 'x', function()
+    return claude.explain_code_operator(mode)
+  end, { expr = true, desc = 'Claude: e[X]plain code {motion}' .. variant.label })
+  vim.keymap.set('n', key 'x' .. (variant.upper and 'X' or 'x'), function()
+    return claude.explain_code_operator(mode) .. '_'
+  end, { expr = true, desc = 'Claude: e[X]plain line' .. variant.label })
+  vim.keymap.set('x', key 'x', function()
+    claude.explain_code(mode)
+  end, { desc = 'Claude: e[X]plain selection' .. variant.label })
+  vim.keymap.set('n', key 'f', function()
+    claude.explain_function(mode)
+  end, { desc = 'Claude: explain [F]unction' .. variant.label })
+  vim.keymap.set('n', key 'c', function()
+    claude.toggle_chat(mode)
+  end, { desc = 'Claude: [C]hat' .. variant.label })
+end
 -- END OF CUSTOM KEYBINDS I CREATED
 
 -- [[ Basic Keymaps ]]
@@ -427,6 +462,7 @@ require('lazy').setup({
         { '<leader>s', group = '[S]earch' },
         { '<leader>t', group = '[T]oggle' },
         { '<leader>h', group = 'Git [H]unk', mode = { 'n', 'v' } },
+        { '<leader>c', group = '[C]laude', mode = { 'n', 'x' } },
       },
     },
   },
