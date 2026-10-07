@@ -205,39 +205,38 @@ end)
 vim.keymap.set('n', '<leader>e', ':Telescope file_browser path=%:p:h select_buffer=true<CR>')
 vim.keymap.set('n', '<leader>p', ':e #<CR>', { desc = 'Go to previous file' })
 
--- Claude: explain errors and code in a popup, or chat in a vertical split. See lua/custom/claude.lua
--- Lowercase keys use the quick mode, uppercase keys the deep one.
-local claude = require 'custom.claude'
-local quick = { model = 'sonnet', effort = 'medium', lite = true }
-local deep = { model = 'opus', effort = 'high' }
+-- explain.nvim (~/projects/explain.nvim, loaded in the plugin list below): explain errors and code
+-- with Claude. Lowercase keys use the quick mode, uppercase keys the deep one.
 for _, variant in ipairs {
-  { mode = quick, upper = false, label = '' },
-  { mode = deep, upper = true, label = ' (Opus)' },
+  { mode = 'quick', upper = false, label = '' },
+  { mode = 'deep', upper = true, label = ' (Opus)' },
 } do
   local function key(k)
     return '<leader>c' .. (variant.upper and k:upper() or k)
   end
   local mode = variant.mode
   vim.keymap.set({ 'n', 'x' }, key 'e', function()
-    claude.explain_error(mode)
+    require('explain').explain_error(mode)
   end, { desc = 'Claude: [E]xplain error' .. variant.label })
   vim.keymap.set('n', key 'x', function()
-    return claude.explain_code_operator(mode)
+    return require('explain').operator(mode)
   end, { expr = true, desc = 'Claude: e[X]plain code {motion}' .. variant.label })
   vim.keymap.set('n', key 'x' .. (variant.upper and 'X' or 'x'), function()
-    return claude.explain_code_operator(mode) .. '_'
+    return require('explain').operator(mode) .. '_'
   end, { expr = true, desc = 'Claude: e[X]plain line' .. variant.label })
   vim.keymap.set('x', key 'x', function()
-    claude.explain_code(mode)
+    require('explain').explain_code(mode)
   end, { desc = 'Claude: e[X]plain selection' .. variant.label })
   vim.keymap.set('n', key 'f', function()
-    claude.explain_function(mode)
+    require('explain').explain_function(mode)
   end, { desc = 'Claude: explain [F]unction' .. variant.label })
   vim.keymap.set('n', key 'c', function()
-    claude.toggle_chat(mode)
+    require('explain').toggle_chat(mode)
   end, { desc = 'Claude: [C]hat' .. variant.label })
 end
-vim.keymap.set('n', '<leader>cb', claude.reopen_last, { desc = 'Claude: [B]ring back last popup' })
+vim.keymap.set('n', '<leader>cb', function()
+  require('explain').reopen_last()
+end, { desc = 'Claude: [B]ring back last popup' })
 -- END OF CUSTOM KEYBINDS I CREATED
 
 -- [[ Basic Keymaps ]]
@@ -328,6 +327,14 @@ require('lazy').setup({
         'c',
       },
     },
+  },
+  -- Added by me, explain errors and code with Claude. Keymaps are with the custom keybinds above.
+  -- dev = true loads my local clone in ~/projects when it exists (see `dev` at the end of this file)
+  {
+    'William-Lamer/explain.nvim',
+    dev = true,
+    lazy = false,
+    opts = {},
   },
   -- Added by me, dashboard plugin
   {
@@ -1195,6 +1202,8 @@ require('lazy').setup({
   -- In normal mode type `<space>sh` then write `lazy.nvim-plugin`
   -- you can continue same window with `<space>sr` which resumes last telescope search
 }, {
+  -- Plugins marked dev = true load from here instead of GitHub, or from GitHub if the folder is missing
+  dev = { path = '~/projects', fallback = true },
   ui = {
     -- If you are using a Nerd Font: set icons to an empty table which will use the
     -- default lazy.nvim defined Nerd Font icons, otherwise define a unicode icons table
