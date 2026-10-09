@@ -196,6 +196,8 @@ vim.keymap.set('n', '<leader>n', function()
     vim.cmd('split | terminal rustc ' .. file .. ' && ./' .. file_no_ext)
   elseif ft == 'javascript' then
     vim.cmd('split | terminal node ' .. file)
+  elseif ft == 'go' then
+    vim.cmd('split | terminal go run ' .. file)
   else
     print('No run command for ' .. ft)
   end
@@ -963,7 +965,7 @@ require('lazy').setup({
         -- Disable "format_on_save lsp_fallback" for languages that don't
         -- have a well standardized coding style. You can add additional
         -- languages here or re-enable it for the disabled ones.
-        local disable_filetypes = { c = true, cpp = true }
+        local disable_filetypes = { c = true, cpp = true, go = true, python = true, rust = true }
         -- An empty filetype would slip past the list above and get formatted by whatever LSP is attached
         local ft = vim.bo[bufnr].filetype
         if ft == '' or disable_filetypes[ft] then
@@ -1189,7 +1191,7 @@ require('lazy').setup({
   -- require 'kickstart.plugins.lint',
   -- require 'kickstart.plugins.autopairs',
   -- require 'kickstart.plugins.neo-tree',
-  -- require 'kickstart.plugins.gitsigns', -- adds gitsigns recommend keymaps
+  require 'kickstart.plugins.gitsigns', -- adds gitsigns recommend keymaps
 
   -- NOTE: The import below can automatically add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
   --    This is the easiest way to modularize your config.
